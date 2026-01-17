@@ -32,7 +32,7 @@ export default function RingIndexPage() {
         setLoading(true);
         setErr(null);
 
-        const res = await fetch("/api/units/public", { method: "GET" });
+        const res = await fetch("/api/units/public");
         const body = await res.json().catch(() => null);
 
         if (!res.ok || !body?.ok) {
@@ -54,7 +54,6 @@ export default function RingIndexPage() {
   }, []);
 
   const flat = useMemo(() => {
-    // Flatten into "who are you here for" entries, because that’s the primary intent.
     const rows: Array<{
       unitId: string;
       studioNumber: string;
@@ -80,7 +79,6 @@ export default function RingIndexPage() {
       }
     }
 
-    // If a unit has zero contacts, we keep the unit itself as a fallback target.
     for (const u of units) {
       if ((u.contacts?.length ?? 0) === 0) {
         const studio = u.studioNumber || u.unitId;
@@ -89,7 +87,7 @@ export default function RingIndexPage() {
           unitId: u.unitId,
           studioNumber: studio,
           companyName: u.companyName ?? null,
-          contactId: "", // indicates "general"
+          contactId: "",
           contactName: "Ring this unit",
           searchText: `${studio} ${company}`.toLowerCase(),
         });
@@ -115,43 +113,25 @@ export default function RingIndexPage() {
 
   return (
     <main style={{ maxWidth: 560, margin: "0 auto", padding: 20 }}>
-      <h1 style={{ fontSize: 28, marginBottom: 6 }}>Who are you here for?</h1>
-      <p style={{ marginTop: 0, opacity: 0.8 }}>
+      <h1 style={{ fontSize: 28, marginBottom: 6, color: "#111" }}>
+        Who are you here for?
+      </h1>
+      <p style={{ marginTop: 0, color: "#444" }}>
         Select a person to ring their phone.
       </p>
 
       <div style={{ marginTop: 16 }}>
         {loading && (
-          <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-            <div style={{ fontWeight: 700 }}>Loading…</div>
-            <div style={{ opacity: 0.75 }}>One sec.</div>
+          <div style={{ padding: 12, border: "1px solid #cfcfcf", borderRadius: 12 }}>
+            <div style={{ fontWeight: 700, color: "#111" }}>Loading…</div>
+            <div style={{ color: "#555" }}>One sec.</div>
           </div>
         )}
 
         {!loading && err && (
-          <div style={{ padding: 12, border: "1px solid #f2b8b8", borderRadius: 12 }}>
-            <div style={{ fontWeight: 800 }}>Can’t load units.</div>
-            <div style={{ marginTop: 6, opacity: 0.8 }}>{err}</div>
-            <button
-              onClick={() => window.location.reload()}
-              style={{
-                marginTop: 10,
-                padding: "10px 12px",
-                borderRadius: 12,
-                cursor: "pointer",
-              }}
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {!loading && !err && flat.length === 0 && (
-          <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-            <div style={{ fontWeight: 800 }}>No units available.</div>
-            <div style={{ marginTop: 6, opacity: 0.8 }}>
-              Please contact reception or try again later.
-            </div>
+          <div style={{ padding: 12, border: "1px solid #e0a0a0", borderRadius: 12 }}>
+            <div style={{ fontWeight: 800, color: "#111" }}>Can’t load units.</div>
+            <div style={{ marginTop: 6, color: "#444" }}>{err}</div>
           </div>
         )}
 
@@ -165,52 +145,56 @@ export default function RingIndexPage() {
                   placeholder="Search studio, company, or name…"
                   style={{
                     width: "100%",
-                    padding: "12px 12px",
+                    padding: "12px",
                     borderRadius: 12,
-                    border: "1px solid #ddd",
+                    border: "1px solid #cfcfcf",
                     fontSize: 16,
+                    color: "#111",
                   }}
                 />
               </div>
             )}
 
-            {filtered.length === 0 ? (
-              <div style={{ padding: 12, border: "1px solid #ddd", borderRadius: 12 }}>
-                <div style={{ fontWeight: 800 }}>No matches.</div>
-                <div style={{ marginTop: 6, opacity: 0.8 }}>
-                  Try a different name, company, or studio number.
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-                {filtered.map((r) => (
-                  <button
-                    key={`${r.unitId}:${r.contactId || "unit"}`}
-                    onClick={() => goToRing(r.unitId, r.contactId)}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+              {filtered.map((r) => (
+                <button
+                  key={`${r.unitId}:${r.contactId || "unit"}`}
+                  onClick={() => goToRing(r.unitId, r.contactId)}
+                  style={{
+                    textAlign: "left",
+                    padding: "14px 14px",
+                    borderRadius: 14,
+                    border: "1px solid #cfcfcf",
+                    background: "#fff",
+                    cursor: "pointer",
+                    minHeight: 64,
+                  }}
+                >
+                  <div
                     style={{
-                      textAlign: "left",
-                      padding: "14px 12px",
-                      borderRadius: 14,
-                      border: "1px solid #ddd",
-                      background: "white",
-                      cursor: "pointer",
-                      minHeight: 64,
+                      fontWeight: 900,
+                      fontSize: 16,
+                      color: "#111",
                     }}
                   >
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>
-                      {r.contactName}
-                    </div>
+                    {r.contactName}
+                  </div>
 
-                    <div style={{ opacity: 0.85, fontSize: 13, marginTop: 3 }}>
-                      <span style={{ fontWeight: 700 }}>{r.studioNumber}</span>
-                      {r.companyName ? ` — ${r.companyName}` : ""}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+                  <div
+                    style={{
+                      fontSize: 14,
+                      marginTop: 4,
+                      color: "#333",
+                    }}
+                  >
+                    <span style={{ fontWeight: 700 }}>{r.studioNumber}</span>
+                    {r.companyName ? ` — ${r.companyName}` : ""}
+                  </div>
+                </button>
+              ))}
+            </div>
 
-            <p style={{ marginTop: 18, opacity: 0.75, fontSize: 13 }}>
+            <p style={{ marginTop: 18, color: "#555", fontSize: 13 }}>
               If you don’t see the person you need, contact reception or try again.
             </p>
           </>
