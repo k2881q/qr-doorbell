@@ -21,13 +21,26 @@ type RecentResponse = {
   activeOnly?: boolean
 }
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  const outputArray = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i)
+  return outputArray
+}
+
 export default function ReceiverInboxPage() {
-  const [unitFilter, setUnitFilter] = useState<string>('') // optional filter
-  const [showHistory, setShowHistory] = useState<boolean>(false) // default active-only
+  const [unitFilter, setUnitFilter] = useState<string>('') // also used for push subscribe
+  const [showHistory, setShowHistory] = useState<boolean>(false)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [events, setEvents] = useState<RingEvent[]>([])
   const [submitting, setSubmitting] = useState<Record<string, string | null>>({})
+
+  // Push state
+  const [pushStatus, setPushStatus] = useState<string>('Push not enabled')
+  const [pushBusy, setPushBusy] = useState(false)
 
   // New-ring alert state
   const [newRingBanner, setNewRingBanner] = useState<string | null>(null)
@@ -36,7 +49,6 @@ export default function ReceiverInboxPage() {
   const titleTimerRef = useRef<number | null>(null)
 
   const isTerminal = useCallback((ev: RingEvent) => {
-    // Your DB treats status='answered' as terminal
     return ev.status === 'answered' || !!ev.responded_at
   }, [])
 
@@ -56,7 +68,6 @@ export default function ReceiverInboxPage() {
   }
 
   const beep = () => {
-    // Best-effort: browser may block audio without user gesture; that's fine.
     try {
       const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext
       if (!AudioCtx) return
@@ -70,12 +81,8 @@ export default function ReceiverInboxPage() {
       gain.connect(ctx.destination)
       osc.start()
       osc.stop(ctx.currentTime + 0.12)
-      osc.onended = () => {
-        try { ctx.close() } catch {}
-      }
-    } catch {
-      // ignore
-    }
+      osc.onended = () => { try { ctx.close() } catch {} }
+    } catch {}
   }
 
   const flashTitle = (msg: string, ms = 4000) => {
@@ -87,9 +94,7 @@ export default function ReceiverInboxPage() {
         document.title = original
         titleTimerRef.current = null
       }, ms)
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   const fetchRecent = useCallback(async () => {
@@ -98,20 +103,16 @@ export default function ReceiverInboxPage() {
       const res = await fetch(`/api/ring/recent?${qs}`, { cache: 'no-store' })
       const json = (await res.json()) as RecentResponse
 
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `Failed (${res.status})`)
-      }
+      if (!res.ok || !json.ok) throw new Error(json.error || `Failed (${res.status})`)
 
       const list = json.ringEvents ?? []
       setEvents(list)
 
-      // Detect new ring at top (only when viewing active rings, not history)
       if (!showHistory && list.length > 0) {
         const top = list[0]
         const prevTop = prevTopIdRef.current
 
         if (prevTop && top.id !== prevTop) {
-          // New ring arrived
           stopBannerTimers()
           setNewRingBanner(`🔔 New ring: unit ${top.unit_id}`)
           flashTitle('🔔 Doorbell!')
@@ -134,20 +135,14 @@ export default function ReceiverInboxPage() {
     }
   }, [qs, showHistory])
 
-  useEffect(() => {
-    fetchRecent()
-  }, [fetchRecent])
+  useEffect(() => { fetchRecent() }, [fetchRecent])
 
-  // Poll
   useEffect(() => {
     const t = setInterval(fetchRecent, 1500)
     return () => clearInterval(t)
   }, [fetchRecent])
 
-  // Cleanup timers on unmount
-  useEffect(() => {
-    return () => stopBannerTimers()
-  }, [])
+  useEffect(() => () => stopBannerTimers(), [])
 
   const respond = useCallback(
     async (ringEventId: string, responseType: 'answered' | 'busy' | 'declined') => {
@@ -162,9 +157,7 @@ export default function ReceiverInboxPage() {
         })
 
         const json = await res.json()
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || `Respond failed (${res.status})`)
-        }
+        if (!res.ok || !json.ok) throw new Error(json.error || `Respond failed (${res.status})`)
 
         await fetchRecent()
       } catch (e: any) {
@@ -176,33 +169,137 @@ export default function ReceiverInboxPage() {
     [fetchRecent]
   )
 
+  const enablePush = useCallback(async () => {
+    setErr(null)
+
+    const unitId = unitFilter.trim()
+    if (!unitId) {
+      setErr('Enter your unit id in “Filter unit” first (e.g. f1u4), then enable push.')
+      return
+    }
+
+    try {
+      setPushBusy(true)
+
+      if (typeof window === 'undefined') throw new Error('No window')
+      if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
+
+      // Permission must be user-initiated (button click) on mobile.
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') {
+        setPushStatus('Push permission not granted')
+        return
+      }
+
+      if (!('serviceWorker' in navigator)) {
+        throw new Error('Service workers not supported in this browser')
+      }
+
+      // Ensure SW is ready (next-pwa registers /sw.js; this waits for it)
+      const reg = await navigator.serviceWorker.ready
+
+      const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+      if (!vapidPublicKey) {
+        throw new Error('Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY')
+      }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      })
+
+      const subJson = sub.toJSON()
+
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unitId,
+          subscription: {
+            endpoint: subJson.endpoint,
+            keys: {
+              p256dh: subJson.keys?.p256dh,
+              auth: subJson.keys?.auth,
+            },
+          },
+        }),
+      })
+
+      const json = await res.json().catch(() => null)
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || `Subscribe failed (${res.status})`)
+      }
+
+      setPushStatus('✅ Push enabled on this device')
+    } catch (e: any) {
+      setPushStatus('Push not enabled')
+      setErr(e?.message ?? 'Failed to enable push')
+    } finally {
+      setPushBusy(false)
+    }
+  }, [unitFilter])
+
   return (
     <main style={{ padding: 24, maxWidth: 900 }}>
       <h1>Receiver inbox</h1>
 
-      <div style={{ marginTop: 12, display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600 }}>Filter unit:</span>
-          <input
-            value={unitFilter}
-            onChange={e => setUnitFilter(e.target.value)}
-            placeholder="e.g. f1u4 (leave empty = all)"
-            style={{ padding: 8, width: 240 }}
-          />
-        </label>
+      <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontWeight: 600 }}>Filter unit:</span>
+            <input
+              value={unitFilter}
+              onChange={e => setUnitFilter(e.target.value)}
+              placeholder="e.g. f1u4 (leave empty = all)"
+              style={{ padding: 8, width: 240 }}
+            />
+          </label>
 
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={showHistory}
-            onChange={e => setShowHistory(e.target.checked)}
-          />
-          <span>Show history</span>
-        </label>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={showHistory}
+              onChange={e => setShowHistory(e.target.checked)}
+            />
+            <span>Show history</span>
+          </label>
 
-        <button onClick={fetchRecent} style={{ padding: '8px 12px' }}>
-          Refresh
-        </button>
+          <button onClick={fetchRecent} style={{ padding: '8px 12px' }}>
+            Refresh
+          </button>
+        </div>
+
+        {/* Push controls */}
+        <div
+          style={{
+            border: '1px solid #ddd',
+            borderRadius: 12,
+            padding: 12,
+            background: '#fff',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ flex: '1 1 280px' }}>
+            <div style={{ fontWeight: 800 }}>Push notifications</div>
+            <div style={{ opacity: 0.8, marginTop: 4 }}>
+              Status: <strong>{pushStatus}</strong>
+            </div>
+            <div style={{ opacity: 0.7, fontSize: 12, marginTop: 6 }}>
+              iPhone/iPad: enable this from the Home Screen-installed web app (iOS 16.4+).
+            </div>
+          </div>
+
+          <button
+            onClick={enablePush}
+            disabled={pushBusy}
+            style={{ padding: '10px 12px' }}
+          >
+            {pushBusy ? 'Enabling…' : 'Enable push on this device'}
+          </button>
+        </div>
       </div>
 
       {newRingBanner && (
