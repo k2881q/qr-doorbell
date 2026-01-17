@@ -10,7 +10,7 @@ type PublicContact = {
 
 type PublicUnit = {
   unitId: string;
-  studioNumber: string; // same as unitId for now
+  studioNumber: string; // NOW: display_name (fallback to unit_id)
   companyName: string | null;
   contacts: PublicContact[];
 };
@@ -33,14 +33,18 @@ export async function GET() {
     const supabase = getSupabaseAdmin();
 
     // Fetch units (public-safe fields only)
+    // Option 1: use units.display_name as the human-facing studio label.
     const { data: unitsData, error: unitsError } = await supabase
       .from("units")
-      .select("unit_id, company_name, active, sort_order")
+      .select("unit_id, display_name, company_name, active, sort_order")
       .order("sort_order", { ascending: true, nullsFirst: false })
       .order("unit_id", { ascending: true });
 
     if (unitsError) {
-      return NextResponse.json({ ok: false, error: unitsError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: unitsError.message },
+        { status: 500 }
+      );
     }
 
     const activeUnits = (unitsData ?? []).filter((u: any) => u?.active !== false);
@@ -55,13 +59,16 @@ export async function GET() {
       .order("display_name", { ascending: true });
 
     if (contactsError) {
-      return NextResponse.json({ ok: false, error: contactsError.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: contactsError.message },
+        { status: 500 }
+      );
     }
 
     // Group contacts by unit_id
     const contactsByUnit = new Map<string, PublicContact[]>();
     for (const c of contactsData ?? []) {
-      if (c?.active === false) continue;
+      if ((c as any)?.active === false) continue;
 
       const unitId = String((c as any).unit_id);
       const list = contactsByUnit.get(unitId) ?? [];
@@ -76,9 +83,16 @@ export async function GET() {
 
     const units: PublicUnit[] = activeUnits.map((u: any) => {
       const unitId = String(u.unit_id);
+
+      // studioNumber uses display_name when present; falls back to unit_id.
+      const studioNumber =
+        (typeof u.display_name === "string" && u.display_name.trim()
+          ? u.display_name.trim()
+          : unitId);
+
       return {
         unitId,
-        studioNumber: unitId,
+        studioNumber,
         companyName: u.company_name ?? null,
         contacts: contactsByUnit.get(unitId) ?? [],
       };
