@@ -286,13 +286,13 @@ export default function ReceiverInboxPage() {
             <input
               value={unitFilter}
               onChange={e => setUnitFilter(e.target.value)}
-              placeholder="e.g. f1u4 (leave empty = all)"
+              placeholder="e.g. 0u3, 1u4 or 2u2 (leave empty = all)"
               style={{
                 padding: 10,
                 width: 240,
                 border: '1px solid #cfcfcf',
                 borderRadius: 10,
-                color: '#111',
+                color: '#fff',
               }}
             />
           </label>
@@ -303,7 +303,7 @@ export default function ReceiverInboxPage() {
               checked={showHistory}
               onChange={e => setShowHistory(e.target.checked)}
             />
-            <span style={{ color: '#111' }}>Show history</span>
+            <span style={{ color: '#fff' }}>Show history</span>
           </label>
 
           <button
@@ -374,7 +374,7 @@ export default function ReceiverInboxPage() {
             border: '1px solid #cfcfcf',
             borderRadius: 10,
             background: '#f7f7f7',
-            color: '#111',
+            color: '#fff',
           }}
         >
           <strong>{newRingBanner}</strong>
@@ -388,9 +388,9 @@ export default function ReceiverInboxPage() {
       )}
 
       {loading ? (
-        <p style={{ marginTop: 16, color: '#111' }}>Loading…</p>
+        <p style={{ marginTop: 16, color: '#fff' }}>Loading…</p>
       ) : events.length === 0 ? (
-        <p style={{ marginTop: 16, color: '#111' }}>
+        <p style={{ marginTop: 16, color: '#fff' }}>
           {showHistory ? 'No ring events yet.' : 'No active rings right now.'}
         </p>
       ) : (
