@@ -30,6 +30,19 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number, label: string) {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    p.then(v => {
+      window.clearTimeout(t)
+      resolve(v)
+    }).catch(e => {
+      window.clearTimeout(t)
+      reject(e)
+    })
+  })
+}
+
 export default function ReceiverInboxPage() {
   const [unitFilter, setUnitFilter] = useState<string>('') // also used for push subscribe
   const [showHistory, setShowHistory] = useState<boolean>(false)
@@ -81,8 +94,12 @@ export default function ReceiverInboxPage() {
       gain.connect(ctx.destination)
       osc.start()
       osc.stop(ctx.currentTime + 0.12)
-      osc.onended = () => { try { ctx.close() } catch {} }
-    } catch {}
+      osc.onended = () => {
+        try { ctx.close() } catch {}
+      }
+    } catch {
+      // ignore
+    }
   }
 
   const flashTitle = (msg: string, ms = 4000) => {
@@ -94,7 +111,9 @@ export default function ReceiverInboxPage() {
         document.title = original
         titleTimerRef.current = null
       }, ms)
-    } catch {}
+    } catch {
+      // ignore
+    }
   }
 
   const fetchRecent = useCallback(async () => {
@@ -108,6 +127,7 @@ export default function ReceiverInboxPage() {
       const list = json.ringEvents ?? []
       setEvents(list)
 
+      // Detect new ring at top (only when viewing active rings, not history)
       if (!showHistory && list.length > 0) {
         const top = list[0]
         const prevTop = prevTopIdRef.current
@@ -137,12 +157,16 @@ export default function ReceiverInboxPage() {
 
   useEffect(() => { fetchRecent() }, [fetchRecent])
 
+  // Poll inbox
   useEffect(() => {
     const t = setInterval(fetchRecent, 1500)
     return () => clearInterval(t)
   }, [fetchRecent])
 
-  useEffect(() => () => stopBannerTimers(), [])
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => stopBannerTimers()
+  }, [])
 
   const respond = useCallback(
     async (ringEventId: string, responseType: 'answered' | 'busy' | 'declined') => {
@@ -180,33 +204,47 @@ export default function ReceiverInboxPage() {
 
     try {
       setPushBusy(true)
+      setPushStatus('Enabling…')
 
-      if (typeof window === 'undefined') throw new Error('No window')
       if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
+      if (!('serviceWorker' in navigator)) throw new Error('Service workers not supported in this browser')
 
-      // Permission must be user-initiated (button click) on mobile.
-      const perm = await Notification.requestPermission()
+      // If previously denied, there will be no prompt.
+      if (Notification.permission === 'denied') {
+        throw new Error('Notifications are blocked for this site in browser settings (permission = denied).')
+      }
+
+      // Ask permission only if needed.
+      const perm =
+        Notification.permission === 'granted'
+          ? 'granted'
+          : await Notification.requestPermission()
+
       if (perm !== 'granted') {
         setPushStatus('Push permission not granted')
         return
       }
 
-      if (!('serviceWorker' in navigator)) {
-        throw new Error('Service workers not supported in this browser')
+      // Ensure SW is registered (next-pwa should do this; we force it just in case)
+      try {
+        await navigator.serviceWorker.register('/sw.js')
+      } catch {
+        // ignore (already registered / not needed)
       }
 
-      // Ensure SW is ready (next-pwa registers /sw.js; this waits for it)
-      const reg = await navigator.serviceWorker.ready
+      const reg = await withTimeout(navigator.serviceWorker.ready, 8000, 'Service worker ready')
 
       const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-      if (!vapidPublicKey) {
-        throw new Error('Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY')
-      }
+      if (!vapidPublicKey) throw new Error('Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY')
 
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
-      })
+      const sub = await withTimeout(
+        reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+        }),
+        8000,
+        'Push subscribe'
+      )
 
       const subJson = sub.toJSON()
 
@@ -226,9 +264,7 @@ export default function ReceiverInboxPage() {
       })
 
       const json = await res.json().catch(() => null)
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || `Subscribe failed (${res.status})`)
-      }
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `Subscribe failed (${res.status})`)
 
       setPushStatus('✅ Push enabled on this device')
     } catch (e: any) {
@@ -246,12 +282,18 @@ export default function ReceiverInboxPage() {
       <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontWeight: 600 }}>Filter unit:</span>
+            <span style={{ fontWeight: 700 }}>Filter unit:</span>
             <input
               value={unitFilter}
               onChange={e => setUnitFilter(e.target.value)}
               placeholder="e.g. f1u4 (leave empty = all)"
-              style={{ padding: 8, width: 240 }}
+              style={{
+                padding: 10,
+                width: 240,
+                border: '1px solid #cfcfcf',
+                borderRadius: 10,
+                color: '#111',
+              }}
             />
           </label>
 
@@ -261,18 +303,29 @@ export default function ReceiverInboxPage() {
               checked={showHistory}
               onChange={e => setShowHistory(e.target.checked)}
             />
-            <span>Show history</span>
+            <span style={{ color: '#111' }}>Show history</span>
           </label>
 
-          <button onClick={fetchRecent} style={{ padding: '8px 12px' }}>
+          <button
+            onClick={fetchRecent}
+            style={{
+              padding: '10px 12px',
+              color: '#111',
+              background: '#fff',
+              border: '1px solid #cfcfcf',
+              borderRadius: 10,
+              fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
             Refresh
           </button>
         </div>
 
-        {/* Push controls */}
+        {/* Push controls (high-contrast) */}
         <div
           style={{
-            border: '1px solid #ddd',
+            border: '1px solid #cfcfcf',
             borderRadius: 12,
             padding: 12,
             background: '#fff',
@@ -283,19 +336,30 @@ export default function ReceiverInboxPage() {
           }}
         >
           <div style={{ flex: '1 1 280px' }}>
-            <div style={{ fontWeight: 800 }}>Push notifications</div>
-            <div style={{ opacity: 0.8, marginTop: 4 }}>
+            <div style={{ fontWeight: 900, color: '#111' }}>Push notifications</div>
+
+            <div style={{ marginTop: 4, color: '#222' }}>
               Status: <strong>{pushStatus}</strong>
             </div>
-            <div style={{ opacity: 0.7, fontSize: 12, marginTop: 6 }}>
-              iPhone/iPad: enable this from the Home Screen-installed web app (iOS 16.4+).
+
+            <div style={{ marginTop: 6, fontSize: 12, color: '#444' }}>
+              Android: works in Chrome. iPhone/iPad: enable from the Home Screen-installed web app (iOS 16.4+).
             </div>
           </div>
 
           <button
             onClick={enablePush}
             disabled={pushBusy}
-            style={{ padding: '10px 12px' }}
+            style={{
+              padding: '10px 12px',
+              color: '#111',
+              background: '#fff',
+              border: '1px solid #cfcfcf',
+              borderRadius: 12,
+              cursor: pushBusy ? 'not-allowed' : 'pointer',
+              fontWeight: 900,
+              opacity: pushBusy ? 0.7 : 1,
+            }}
           >
             {pushBusy ? 'Enabling…' : 'Enable push on this device'}
           </button>
@@ -307,9 +371,10 @@ export default function ReceiverInboxPage() {
           style={{
             marginTop: 12,
             padding: 10,
-            border: '1px solid #ccc',
+            border: '1px solid #cfcfcf',
             borderRadius: 10,
             background: '#f7f7f7',
+            color: '#111',
           }}
         >
           <strong>{newRingBanner}</strong>
@@ -317,15 +382,15 @@ export default function ReceiverInboxPage() {
       )}
 
       {err && (
-        <div style={{ marginTop: 12, color: 'red' }}>
+        <div style={{ marginTop: 12, color: '#b00020', fontWeight: 700 }}>
           {err}
         </div>
       )}
 
       {loading ? (
-        <p style={{ marginTop: 16 }}>Loading…</p>
+        <p style={{ marginTop: 16, color: '#111' }}>Loading…</p>
       ) : events.length === 0 ? (
-        <p style={{ marginTop: 16 }}>
+        <p style={{ marginTop: 16, color: '#111' }}>
           {showHistory ? 'No ring events yet.' : 'No active rings right now.'}
         </p>
       ) : (
@@ -339,25 +404,30 @@ export default function ReceiverInboxPage() {
                 key={ev.id}
                 style={{
                   border: '1px solid #ddd',
-                  borderRadius: 10,
+                  borderRadius: 12,
                   padding: 12,
                   display: 'grid',
                   gap: 10,
+                  background: '#fff',
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>
+                    <div style={{ fontWeight: 900, color: '#111' }}>
                       Unit: {ev.unit_id}
                     </div>
 
-                    <div style={{ opacity: 0.85, marginTop: 4 }}>
+                    <div style={{ marginTop: 4, color: '#222' }}>
                       Status: <strong>{ev.status}</strong>
-                      {ev.response_type ? <> · Response: <strong>{ev.response_type}</strong></> : null}
+                      {ev.response_type ? (
+                        <>
+                          {' '}· Response: <strong>{ev.response_type}</strong>
+                        </>
+                      ) : null}
                     </div>
 
                     {(ev.visitor_name || ev.visit_reason) && (
-                      <div style={{ marginTop: 6, opacity: 0.85 }}>
+                      <div style={{ marginTop: 6, color: '#222' }}>
                         {ev.visitor_name ? (
                           <div><strong>Visitor:</strong> {ev.visitor_name}</div>
                         ) : null}
@@ -367,17 +437,17 @@ export default function ReceiverInboxPage() {
                       </div>
                     )}
 
-                    <div style={{ opacity: 0.7, fontSize: 12, marginTop: 6 }}>
+                    <div style={{ fontSize: 12, marginTop: 6, color: '#444' }}>
                       Created: {new Date(ev.created_at).toLocaleString()}
                       {ev.responded_at ? <> · Responded: {new Date(ev.responded_at).toLocaleString()}</> : null}
                     </div>
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <Link href={`/receiver/respond/${encodeURIComponent(ev.id)}`}>
+                    <Link href={`/receiver/respond/${encodeURIComponent(ev.id)}`} style={{ color: '#111', fontWeight: 800 }}>
                       Open detail
                     </Link>
-                    <div style={{ opacity: 0.6, fontSize: 12, marginTop: 4 }}>
+                    <div style={{ fontSize: 12, marginTop: 4, color: '#666' }}>
                       {ev.id}
                     </div>
                   </div>
@@ -387,7 +457,16 @@ export default function ReceiverInboxPage() {
                   <button
                     onClick={() => respond(ev.id, 'answered')}
                     disabled={terminal || busy}
-                    style={{ padding: '8px 12px' }}
+                    style={{
+                      padding: '10px 12px',
+                      color: '#111',
+                      background: '#fff',
+                      border: '1px solid #cfcfcf',
+                      borderRadius: 10,
+                      fontWeight: 900,
+                      cursor: terminal || busy ? 'not-allowed' : 'pointer',
+                      opacity: terminal || busy ? 0.6 : 1,
+                    }}
                   >
                     Answer
                   </button>
@@ -395,7 +474,16 @@ export default function ReceiverInboxPage() {
                   <button
                     onClick={() => respond(ev.id, 'busy')}
                     disabled={terminal || busy}
-                    style={{ padding: '8px 12px' }}
+                    style={{
+                      padding: '10px 12px',
+                      color: '#111',
+                      background: '#fff',
+                      border: '1px solid #cfcfcf',
+                      borderRadius: 10,
+                      fontWeight: 900,
+                      cursor: terminal || busy ? 'not-allowed' : 'pointer',
+                      opacity: terminal || busy ? 0.6 : 1,
+                    }}
                   >
                     Can’t answer
                   </button>
@@ -403,13 +491,22 @@ export default function ReceiverInboxPage() {
                   <button
                     onClick={() => respond(ev.id, 'declined')}
                     disabled={terminal || busy}
-                    style={{ padding: '8px 12px' }}
+                    style={{
+                      padding: '10px 12px',
+                      color: '#111',
+                      background: '#fff',
+                      border: '1px solid #cfcfcf',
+                      borderRadius: 10,
+                      fontWeight: 900,
+                      cursor: terminal || busy ? 'not-allowed' : 'pointer',
+                      opacity: terminal || busy ? 0.6 : 1,
+                    }}
                   >
                     Decline
                   </button>
 
                   {terminal && (
-                    <span style={{ alignSelf: 'center', opacity: 0.75 }}>
+                    <span style={{ alignSelf: 'center', color: '#444', fontWeight: 700 }}>
                       ✅ Completed
                     </span>
                   )}
