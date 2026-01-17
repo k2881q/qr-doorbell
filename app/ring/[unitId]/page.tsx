@@ -273,7 +273,7 @@ export default function RingUnitPage() {
 
   const ringDisabled = isLoading || !unitId || isEscalating || status === "answered";
 
-  const headerStudio = unitMeta?.studioNumber ?? unitId || "(missing)";
+const headerStudio = unitMeta?.studioNumber ?? (unitId || "(missing)");
   const headerCompany = unitMeta?.companyName ?? null;
 
   return (
