@@ -308,7 +308,7 @@ let stopped = false
           </div>
         )}
 
-        {status === 'call_prompt' && status !== 'answered' && (
+       {status === 'call_prompt' && (
           <div
             style={{
               marginTop: 16,
