@@ -1,5 +1,7 @@
+// app/api/ring/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { sendPushToSubscriptions } from "@/lib/push";
 
 export const runtime = "nodejs";
 
@@ -40,7 +42,6 @@ export async function POST(req: Request) {
     }
 
     // 1) Auto-expire stale active rings for this unit (prevents zombies)
-    //    (Matches your existing "self-heal" behavior.)
     const { error: expireError } = await supabase
       .from("ring_events")
       .update({
@@ -56,8 +57,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: expireError.message }, { status: 500 });
     }
 
-    // 2) Anti-spam: Only one active ring per unit.
-    //    If there is already an active ring, reuse it.
+    // 2) Anti-spam: Only one active ring per unit. If there is already an active ring, reuse it.
     const { data: existing, error: existingError } = await supabase
       .from("ring_events")
       .select(
@@ -74,16 +74,13 @@ export async function POST(req: Request) {
     }
 
     if (existing?.id) {
-      // Optionally: if the existing ring is missing visitor info and this request includes it,
-      // we can gently fill it in (won't overwrite).
+      // If existing ring is missing visitor info and this request includes it, gently fill (no overwrite)
       const patch: any = {};
       if (!existing.visitor_name && visitorName) patch.visitor_name = visitorName;
       if (!existing.visit_reason && visitReason) patch.visit_reason = visitReason;
 
-      // Also: if no contact was previously set, and this request includes one, we can attach it.
-      // (Still one ring per unit; we’re just capturing intent.)
+      // If no contact was previously set, and this request includes one, attach it
       if (!existing.contact_id && contactId) {
-        // Look up contact display_name safely (no phone returned).
         const { data: c, error: cErr } = await supabase
           .from("unit_contacts")
           .select("id, display_name, unit_id, active")
@@ -101,6 +98,8 @@ export async function POST(req: Request) {
         await supabase.from("ring_events").update(patch).eq("id", existing.id);
       }
 
+      // NOTE: We do NOT send a push for an existing active ring.
+      // Reason: prevents push-spam if visitor spams the ring button.
       return NextResponse.json({ ok: true, ringEvent: existing }, { status: 200 });
     }
 
@@ -137,7 +136,6 @@ export async function POST(req: Request) {
       status: "ringed" satisfies RingStatus,
       visitor_name: visitorName,
       visit_reason: visitReason,
-      // requires you to have added these columns to ring_events:
       contact_id: contactIdToStore,
       contact_name: contactName,
     };
@@ -152,6 +150,72 @@ export async function POST(req: Request) {
 
     if (createError) {
       return NextResponse.json({ ok: false, error: createError.message }, { status: 500 });
+    }
+
+    // 5) Send push notifications (best-effort; ring creation should still succeed even if push fails)
+    //    - Targets unit subscriptions
+    //    - If you store contact_id in push_subscriptions, we prefer contact-specific subscriptions
+    try {
+      // Optional: fetch unit display_name for nicer push body
+      const { data: unitRow } = await supabase
+        .from("units")
+        .select("id, display_name")
+        .eq("id", unitId)
+        .maybeSingle();
+
+      const unitDisplay = unitRow?.display_name ? String(unitRow.display_name) : unitId;
+
+      // Query subscriptions:
+      // If contactIdToStore exists, try contact-specific first (if your schema has contact_id column).
+      // If that yields nothing (or column doesn't exist), fall back to unit-wide.
+      let subs: Array<{ id: string; subscription: any }> = [];
+
+      // Attempt contact-specific fetch (only if contact_id exists in push_subscriptions)
+      if (contactIdToStore) {
+        const { data: contactSubs, error: contactSubsErr } = await supabase
+          .from("push_subscriptions")
+          .select("id, subscription")
+          .eq("unit_id", unitId)
+          .eq("contact_id", contactIdToStore);
+
+        // If the column doesn't exist, Supabase will error; we just ignore and fall back.
+        if (!contactSubsErr && Array.isArray(contactSubs) && contactSubs.length > 0) {
+          subs = contactSubs as any;
+        }
+      }
+
+      // Fall back to unit-wide subs
+      if (subs.length === 0) {
+        const { data: unitSubs, error: unitSubsErr } = await supabase
+          .from("push_subscriptions")
+          .select("id, subscription")
+          .eq("unit_id", unitId);
+
+        if (!unitSubsErr && Array.isArray(unitSubs)) {
+          subs = unitSubs as any;
+        }
+      }
+
+      if (subs.length > 0) {
+        await sendPushToSubscriptions(
+          subs,
+          {
+            title: "Doorbell",
+            body: contactName
+              ? `${visitorName ? visitorName + " is" : "Someone is"} at ${unitDisplay} for ${contactName}.`
+              : `${visitorName ? visitorName + " is" : "Someone is"} at ${unitDisplay}.`,
+            data: { url: "/receiver", ringEventId: created.id, unitId },
+            tag: `ring-${created.id}`,
+          },
+          async (subId) => {
+            // remove invalid subscriptions
+            await supabase.from("push_subscriptions").delete().eq("id", subId);
+          }
+        );
+      }
+    } catch (pushErr) {
+      // Best-effort only; log server-side if you want but do not fail the ring.
+      // console.error("[push] failed to send", pushErr);
     }
 
     return NextResponse.json({ ok: true, ringEvent: created }, { status: 200 });

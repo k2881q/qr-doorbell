@@ -12,6 +12,8 @@ type RingEvent = {
   response_type: string | null
   visitor_name?: string | null
   visit_reason?: string | null
+  contact_id?: string | null
+  contact_name?: string | null
 }
 
 type RecentResponse = {
@@ -19,6 +21,18 @@ type RecentResponse = {
   error?: string
   ringEvents?: RingEvent[]
   activeOnly?: boolean
+}
+
+type UnitOption = {
+  id: string
+  display_name: string
+  active?: boolean | null
+}
+
+type UnitsResponse = {
+  ok: boolean
+  error?: string
+  units?: UnitOption[]
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -44,18 +58,22 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string) {
 }
 
 export default function ReceiverInboxPage() {
-  const [unitFilter, setUnitFilter] = useState<string>('') // also used for push subscribe
+  // Unit dropdown
+  const [units, setUnits] = useState<UnitOption[]>([])
+  const [unitFilter, setUnitFilter] = useState<string>('') // '' = all units
   const [showHistory, setShowHistory] = useState<boolean>(false)
+
+  // Inbox
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [events, setEvents] = useState<RingEvent[]>([])
   const [submitting, setSubmitting] = useState<Record<string, string | null>>({})
 
-  // Push state
+  // Push
   const [pushStatus, setPushStatus] = useState<string>('Push not enabled')
   const [pushBusy, setPushBusy] = useState(false)
 
-  // New-ring alert state
+  // New-ring alert
   const [newRingBanner, setNewRingBanner] = useState<string | null>(null)
   const prevTopIdRef = useRef<string | null>(null)
   const bannerTimerRef = useRef<number | null>(null)
@@ -64,6 +82,12 @@ export default function ReceiverInboxPage() {
   const isTerminal = useCallback((ev: RingEvent) => {
     return ev.status === 'answered' || !!ev.responded_at
   }, [])
+
+  const selectedUnitLabel = useMemo(() => {
+    if (!unitFilter) return 'All units'
+    const u = units.find(x => x.id === unitFilter)
+    return u?.display_name || unitFilter
+  }, [unitFilter, units])
 
   const qs = useMemo(() => {
     const sp = new URLSearchParams()
@@ -116,6 +140,23 @@ export default function ReceiverInboxPage() {
     }
   }
 
+  // Load units for dropdown
+  const fetchUnits = useCallback(async () => {
+    try {
+      const res = await fetch('/api/units', { cache: 'no-store' })
+      const json = (await res.json()) as UnitsResponse
+      if (!res.ok || !json.ok) throw new Error(json.error || `Failed to load units (${res.status})`)
+      const list = (json.units || []).filter(u => u && u.id && u.display_name)
+      setUnits(list)
+
+      // If we have no selection yet, keep it as "All units"
+      // (If you'd rather default to the first unit, change this behavior.)
+    } catch (e: any) {
+      // Units failing shouldn't break inbox usage; just show a helpful error.
+      setErr(e?.message ?? 'Failed to load unit list')
+    }
+  }, [])
+
   const fetchRecent = useCallback(async () => {
     setErr(null)
     try {
@@ -134,7 +175,7 @@ export default function ReceiverInboxPage() {
 
         if (prevTop && top.id !== prevTop) {
           stopBannerTimers()
-          setNewRingBanner(`🔔 New ring: unit ${top.unit_id}`)
+          setNewRingBanner(`🔔 New ring: ${top.unit_id}`)
           flashTitle('🔔 Doorbell!')
           beep()
 
@@ -155,7 +196,10 @@ export default function ReceiverInboxPage() {
     }
   }, [qs, showHistory])
 
-  useEffect(() => { fetchRecent() }, [fetchRecent])
+  useEffect(() => {
+    fetchUnits()
+    fetchRecent()
+  }, [fetchUnits, fetchRecent])
 
   // Poll inbox
   useEffect(() => {
@@ -198,7 +242,7 @@ export default function ReceiverInboxPage() {
 
     const unitId = unitFilter.trim()
     if (!unitId) {
-      setErr('Enter your unit id in “Filter unit” first (e.g. f1u4), then enable push.')
+      setErr('Select a unit from the dropdown first, then enable push.')
       return
     }
 
@@ -229,7 +273,7 @@ export default function ReceiverInboxPage() {
       try {
         await navigator.serviceWorker.register('/sw.js')
       } catch {
-        // ignore (already registered / not needed)
+        // ignore
       }
 
       const reg = await withTimeout(navigator.serviceWorker.ready, 8000, 'Service worker ready')
@@ -266,14 +310,14 @@ export default function ReceiverInboxPage() {
       const json = await res.json().catch(() => null)
       if (!res.ok || !json?.ok) throw new Error(json?.error || `Subscribe failed (${res.status})`)
 
-      setPushStatus('✅ Push enabled on this device')
+      setPushStatus(`✅ Push enabled for ${selectedUnitLabel}`)
     } catch (e: any) {
       setPushStatus('Push not enabled')
       setErr(e?.message ?? 'Failed to enable push')
     } finally {
       setPushBusy(false)
     }
-  }, [unitFilter])
+  }, [unitFilter, selectedUnitLabel])
 
   return (
     <main style={{ padding: 24, maxWidth: 900 }}>
@@ -281,20 +325,29 @@ export default function ReceiverInboxPage() {
 
       <div style={{ marginTop: 12, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Unit dropdown */}
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontWeight: 700 }}>Filter unit:</span>
-            <input
+            <span style={{ fontWeight: 700, color: '#fff' }}>Unit:</span>
+            <select
               value={unitFilter}
               onChange={e => setUnitFilter(e.target.value)}
-              placeholder="e.g. 0u3, 1u4 or 2u2 (leave empty = all)"
               style={{
                 padding: 10,
-                width: 240,
+                width: 260,
                 border: '1px solid #cfcfcf',
                 borderRadius: 10,
-                color: '#fff',
+                color: '#111',
+                background: '#fff',
+                fontWeight: 700,
               }}
-            />
+            >
+              <option value="">All units</option>
+              {units.map(u => (
+                <option key={u.id} value={u.id}>
+                  {u.display_name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -322,7 +375,7 @@ export default function ReceiverInboxPage() {
           </button>
         </div>
 
-        {/* Push controls (high-contrast) */}
+        {/* Push controls */}
         <div
           style={{
             border: '1px solid #cfcfcf',
@@ -344,6 +397,10 @@ export default function ReceiverInboxPage() {
 
             <div style={{ marginTop: 6, fontSize: 12, color: '#444' }}>
               Android: works in Chrome. iPhone/iPad: enable from the Home Screen-installed web app (iOS 16.4+).
+            </div>
+
+            <div style={{ marginTop: 6, fontSize: 12, color: '#444' }}>
+              Selected unit for push: <strong>{selectedUnitLabel}</strong>
             </div>
           </div>
 
@@ -373,8 +430,8 @@ export default function ReceiverInboxPage() {
             padding: 10,
             border: '1px solid #cfcfcf',
             borderRadius: 10,
-            background: '#f7f7f7',
-            color: '#fff',
+            background: '#fff',
+            color: '#111',
           }}
         >
           <strong>{newRingBanner}</strong>
@@ -415,6 +472,9 @@ export default function ReceiverInboxPage() {
                   <div>
                     <div style={{ fontWeight: 900, color: '#111' }}>
                       Unit: {ev.unit_id}
+                      {ev.contact_name ? (
+                        <span style={{ fontWeight: 700, color: '#444' }}> · For: {ev.contact_name}</span>
+                      ) : null}
                     </div>
 
                     <div style={{ marginTop: 4, color: '#222' }}>
