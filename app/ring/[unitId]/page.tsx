@@ -96,11 +96,15 @@ export default function RingUnitPage() {
 
   // Poll status so escalation stops if receiver responds
   useEffect(() => {
-    if (!ringEventId) return
-    if (!(status === 'ringed' || status === 'sms_sent' || status === 'call_prompt')) return
-    if (status === 'answered') return
+if (!ringEventId) return
 
-    let stopped = false
+const isEscalating =
+  status === 'ringed' || status === 'sms_sent' || status === 'call_prompt'
+
+if (!isEscalating) return
+
+let stopped = false
+
 
     const interval = window.setInterval(async () => {
       if (stopped) return
