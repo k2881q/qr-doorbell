@@ -29,36 +29,42 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const unitId = normalizeText(body.unitId, 64);
-    const subscription = body.subscription;
+    const contactId = normalizeText(body.contactId, 80); // optional (uuid string)
+
+    const sub = body.subscription;
+
+    const endpoint = normalizeText(sub?.endpoint, 2000);
+    const p256dh = normalizeText(sub?.keys?.p256dh, 512);
+    const auth = normalizeText(sub?.keys?.auth, 512);
 
     if (!unitId) {
       return NextResponse.json({ ok: false, error: "Missing unitId" }, { status: 400 });
     }
 
-    if (!subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+    if (!endpoint || !p256dh || !auth) {
       return NextResponse.json(
-        { ok: false, error: "Missing or invalid subscription payload" },
+        { ok: false, error: "Missing subscription.endpoint or subscription.keys (p256dh/auth)" },
         { status: 400 }
       );
     }
 
-    // IMPORTANT: We no longer hard-fail if unitId isn't in the units table.
-    // Some setups use string IDs (f1u4) while the units table might be uuid-based,
-    // and we don't want push to be blocked by that.
-    // If you want to re-enable strict validation later, do it once your units table is finalized.
+    // Store both the raw subscription JSON and the extracted fields,
+    // because your DB schema has separate NOT NULL columns.
+    const payload: any = {
+      unit_id: unitId,
+      endpoint,
+      p256dh,
+      auth,
+      subscription: sub,
+      updated_at: new Date().toISOString(),
+    };
 
-    // Upsert by endpoint (unique). If your table uses a different unique constraint,
-    // adjust accordingly.
+    // Optional: store a targeted contact id if you support contact-level push later
+    if (contactId) payload.contact_id = contactId;
+
     const { error } = await supabase
       .from("push_subscriptions")
-      .upsert(
-        {
-          unit_id: unitId,
-          subscription,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "endpoint" }
-      );
+      .upsert(payload, { onConflict: "endpoint" });
 
     if (error) {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
@@ -67,8 +73,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.message ?? "Unknown error" },
-      { status: 500 }
-    );
-  }
-}
+      { ok: false, error: err?.mess
