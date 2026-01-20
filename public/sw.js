@@ -1,1 +1,103 @@
 if(!self.define){let e,s={};const a=(a,n)=>(a=new URL(a+".js",n).href,s[a]||new Promise(s=>{if("document"in self){const e=document.createElement("script");e.src=a,e.onload=s,document.head.appendChild(e)}else e=a,importScripts(a),s()}).then(()=>{let e=s[a];if(!e)throw new Error(`Module ${a} didn’t register its module`);return e}));self.define=(n,t)=>{const i=e||("document"in self?document.currentScript.src:"")||location.href;if(s[i])return;let c={};const r=e=>a(e,i),o={module:{uri:i},exports:c,require:r};s[i]=Promise.all(n.map(e=>o[e]||r(e))).then(e=>(t(...e),c))}}define(["./workbox-4754cb34"],function(e){"use strict";importScripts("/sw-custom.js"),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/static/chunks/4bd1b696-096d35a2bd1da3af.js",revision:"096d35a2bd1da3af"},{url:"/_next/static/chunks/500-5d45efbf86b8d36e.js",revision:"5d45efbf86b8d36e"},{url:"/_next/static/chunks/794-99d5cd975604d066.js",revision:"99d5cd975604d066"},{url:"/_next/static/chunks/899.1813981119fa1f8a.js",revision:"1813981119fa1f8a"},{url:"/_next/static/chunks/966.1775eb621d8d3e09.js",revision:"1775eb621d8d3e09"},{url:"/_next/static/chunks/app/_global-error/page-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/_not-found/page-4e6b75d84cbba0a4.js",revision:"4e6b75d84cbba0a4"},{url:"/_next/static/chunks/app/api/notify/sms/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/push/subscribe/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/push/test/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/ring/recent/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/ring/respond/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/ring/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/ring/status/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/units/public/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/api/units/route-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/app/layout-41a4df662301c70c.js",revision:"41a4df662301c70c"},{url:"/_next/static/chunks/app/page-c8f62ad61937fd1e.js",revision:"c8f62ad61937fd1e"},{url:"/_next/static/chunks/app/receiver/page-79fa5377caa1a0a2.js",revision:"79fa5377caa1a0a2"},{url:"/_next/static/chunks/app/receiver/respond/%5BringEventId%5D/page-9306e156aa11ac1b.js",revision:"9306e156aa11ac1b"},{url:"/_next/static/chunks/app/ring/%5BunitId%5D/page-783e04137b17f14c.js",revision:"783e04137b17f14c"},{url:"/_next/static/chunks/app/ring/page-3e4c5eaf4f15d8dd.js",revision:"3e4c5eaf4f15d8dd"},{url:"/_next/static/chunks/app/visitor/page-a6eb004e49c69c2f.js",revision:"a6eb004e49c69c2f"},{url:"/_next/static/chunks/framework-75892d61b920805f.js",revision:"75892d61b920805f"},{url:"/_next/static/chunks/main-app-2576e82f12f66ef7.js",revision:"2576e82f12f66ef7"},{url:"/_next/static/chunks/main-c959952688fc9a20.js",revision:"c959952688fc9a20"},{url:"/_next/static/chunks/next/dist/client/components/builtin/app-error-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/next/dist/client/components/builtin/forbidden-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/next/dist/client/components/builtin/global-error-14bd14f39e07021a.js",revision:"14bd14f39e07021a"},{url:"/_next/static/chunks/next/dist/client/components/builtin/not-found-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/next/dist/client/components/builtin/unauthorized-a9b2636eb9d1506a.js",revision:"a9b2636eb9d1506a"},{url:"/_next/static/chunks/polyfills-42372ed130431b0a.js",revision:"846118c33b2c0e922d7b3a7676f81f6f"},{url:"/_next/static/chunks/webpack-6bbc21fc53639a8a.js",revision:"6bbc21fc53639a8a"},{url:"/_next/static/css/611e490238752cf5.css",revision:"611e490238752cf5"},{url:"/_next/static/media/4cf2300e9c8272f7-s.p.woff2",revision:"18bae71b1e1b2bb25321090a3b563103"},{url:"/_next/static/media/747892c23ea88013-s.woff2",revision:"a0761690ccf4441ace5cec893b82d4ab"},{url:"/_next/static/media/8d697b304b401681-s.woff2",revision:"cc728f6c0adb04da0dfcb0fc436a8ae5"},{url:"/_next/static/media/93f479601ee12b01-s.p.woff2",revision:"da83d5f06d825c5ae65b7cca706cb312"},{url:"/_next/static/media/9610d9e46709d722-s.woff2",revision:"7b7c0ef93df188a852344fc272fc096b"},{url:"/_next/static/media/ba015fad6dcf6784-s.woff2",revision:"8ea4f719af3312a055caf09f34c89a77"},{url:"/_next/static/q1asffVh5oCJ2sUMAkLML/_buildManifest.js",revision:"fa67c10f9cb6cb502f39e334ccf468d8"},{url:"/_next/static/q1asffVh5oCJ2sUMAkLML/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/file.svg",revision:"d09f95206c3fa0bb9bd9fefabfd0ea71"},{url:"/globe.svg",revision:"2aaafa6a49b6563925fe440891e32717"},{url:"/manifest.json",revision:"29a44b9ed70a18b76c9ae4371ed8951b"},{url:"/next.svg",revision:"8e061864f388b47f33a1c3780831193e"},{url:"/sw-custom.js",revision:"d8f7466a8d0586b132085a4e6e51472f"},{url:"/sw-push.js",revision:"efbc0715828a3188e47bd763c184871f"},{url:"/vercel.svg",revision:"c0af2f507b369b085b35ef4bbe3bcf1e"},{url:"/window.svg",revision:"a2760511c65806022ad20adf74370ff3"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:s,event:a,state:n})=>s&&"opaqueredirect"===s.type?new Response(s.body,{status:200,statusText:"OK",headers:s.headers}):s}]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:gstatic)\.com\/.*/i,new e.CacheFirst({cacheName:"google-fonts-webfonts",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:31536e3})]}),"GET"),e.registerRoute(/^https:\/\/fonts\.(?:googleapis)\.com\/.*/i,new e.StaleWhileRevalidate({cacheName:"google-fonts-stylesheets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:eot|otf|ttc|ttf|woff|woff2|font.css)$/i,new e.StaleWhileRevalidate({cacheName:"static-font-assets",plugins:[new e.ExpirationPlugin({maxEntries:4,maxAgeSeconds:604800})]}),"GET"),e.registerRoute(/\.(?:jpg|jpeg|gif|png|svg|ico|webp)$/i,new e.StaleWhileRevalidate({cacheName:"static-image-assets",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/image\?url=.+$/i,new e.StaleWhileRevalidate({cacheName:"next-image",plugins:[new e.ExpirationPlugin({maxEntries:64,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp3|wav|ogg)$/i,new e.CacheFirst({cacheName:"static-audio-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:mp4)$/i,new e.CacheFirst({cacheName:"static-video-assets",plugins:[new e.RangeRequestsPlugin,new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:js)$/i,new e.StaleWhileRevalidate({cacheName:"static-js-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:css|less)$/i,new e.StaleWhileRevalidate({cacheName:"static-style-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\/_next\/data\/.+\/.+\.json$/i,new e.StaleWhileRevalidate({cacheName:"next-data",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(/\.(?:json|xml|csv)$/i,new e.NetworkFirst({cacheName:"static-data-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;const s=e.pathname;return!s.startsWith("/api/auth/")&&!!s.startsWith("/api/")},new e.NetworkFirst({cacheName:"apis",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:16,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;return!e.pathname.startsWith("/api/")},new e.NetworkFirst({cacheName:"others",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),e.registerRoute(({url:e})=>!(self.origin===e.origin),new e.NetworkFirst({cacheName:"cross-origin",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:3600})]}),"GET")});
+// --- Doorbell push notification behavior (appended) ---
+// This runs when a push arrives (even if Chrome/PWA is closed).
+
+self.addEventListener('push', function (event) {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch (e) {
+    data = { title: 'Doorbell', body: event.data ? event.data.text() : 'New ring' }
+  }
+
+  const title = data.title || '🔔 Doorbell'
+  const body = data.body || 'Someone is ringing.'
+  const url = data.url || '/receiver'
+
+  const options = {
+    body,
+    // NOTE: Web Push cannot set a custom sound. The OS decides sound based on device/channel settings.
+    // These options DO help on Android:
+    vibrate: [120, 60, 120, 60, 240], // tweak pattern as you like
+    requireInteraction: true,         // keeps it visible until dismissed (Android-supported)
+    tag: 'doorbell',                  // group doorbell notifications
+    renotify: true,                   // if same tag is reused, it will alert again
+    silent: false,                    // request sound/vibrate if allowed (OS may still suppress)
+    data: { url },
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close()
+  const url = (event.notification && event.notification.data && event.notification.data.url) || '/receiver'
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+      // Focus an open tab if we already have one
+      for (const client of windowClients) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus()
+      }
+      // Otherwise open a new one
+      if (clients.openWindow) return clients.openWindow(url)
+    })
+  )
+})
+// ===============================
+// Doorbell push UX (visual urgency + requireInteraction)
+// ===============================
+
+self.addEventListener('push', function (event) {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch (e) {
+    data = { title: '🔔 Doorbell', body: event.data ? event.data.text() : 'Someone is ringing.', url: '/receiver' }
+  }
+
+  // 1) Visual urgency
+  const title = data.title || '🔔 Doorbell'
+  const body = data.body || 'Someone is ringing. Tap to open.'
+  const url = data.url || '/receiver'
+
+  // 2) Keep it on screen until dismissed
+  const options = {
+    body,
+
+    // Makes the notification stick around until the user dismisses it (Android supports this).
+    requireInteraction: true,
+
+    // Groups doorbell notifications together.
+    tag: 'doorbell',
+    renotify: true,
+
+    // Tap should open the receiver page immediately
+    data: { url },
+
+    // Optional: vibration pattern (Android)
+    vibrate: [120, 60, 120, 60, 240],
+
+    // Ask for sound/vibration IF the OS allows it (cannot override silent/DND)
+    silent: false,
+  }
+
+  event.waitUntil(self.registration.showNotification(title, options))
+})
+
+self.addEventListener('notificationclick', function (event) {
+  event.notification.close()
+
+  const url = (event.notification && event.notification.data && event.notification.data.url) || '/receiver'
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      // Focus existing tab if it exists
+      for (const client of windowClients) {
+        if (client.url.includes(url) && 'focus' in client) return client.focus()
+      }
+      // Otherwise open it
+      if (clients.openWindow) return clients.openWindow(url)
+    })
+  )
+})

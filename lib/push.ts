@@ -1,8 +1,15 @@
 import webpush from 'web-push'
 
-type DBPushSubscription = {
+export type DBPushSubscription = {
   id: string
-  subscription: any
+
+  // If you stored the full subscription JSON in one column:
+  subscription?: any | null
+
+  // If you stored split fields instead (your table has these):
+  endpoint?: string | null
+  p256dh?: string | null
+  auth?: string | null
 }
 
 function getVapid() {
@@ -20,6 +27,62 @@ export function configureWebPush() {
   webpush.setVapidDetails('mailto:admin@example.com', publicKey, privateKey)
 }
 
+/**
+ * Builds the exact payload your service worker expects:
+ * { title, body, url }
+ *
+ * Visual urgency:
+ * - title is always "🔔 Doorbell"
+ * - body is short and actionable
+ * - url defaults to "/receiver"
+ */
+export function buildDoorbellPayload(args: {
+  unitDisplayName?: string | null
+  visitorName?: string | null
+  visitReason?: string | null
+  url?: string | null
+}) {
+  const unitLabel = (args.unitDisplayName || '').trim() || 'Your unit'
+  const who = (args.visitorName || '').trim()
+  const why = (args.visitReason || '').trim()
+
+  // Keep body short, punchy, actionable.
+  let body = `${unitLabel} is ringing — tap to respond`
+  if (who && why) body = `${who} (${why}) — tap to respond`
+  else if (who) body = `${who} is at the door — tap to respond`
+  else if (why) body = `${why} — tap to respond`
+
+  return {
+    title: '🔔 Doorbell',
+    body,
+    url: (args.url || '').trim() || '/receiver',
+  }
+}
+
+function normalizePayload(payload: any): string {
+  // Allow callers to pass either a string or object
+  if (typeof payload === 'string') return payload
+  return JSON.stringify(payload)
+}
+
+function toWebPushSubscription(row: DBPushSubscription): any {
+  // Prefer the full JSON subscription if present
+  if (row.subscription && row.subscription.endpoint) return row.subscription
+
+  // Otherwise build it from split columns
+  if (row.endpoint && row.p256dh && row.auth) {
+    return {
+      endpoint: row.endpoint,
+      keys: {
+        p256dh: row.p256dh,
+        auth: row.auth,
+      },
+    }
+  }
+
+  throw new Error(`Subscription row ${row.id} missing endpoint/keys`)
+}
+
 export async function sendPushToSubscriptions(
   subs: DBPushSubscription[],
   payload: any,
@@ -27,10 +90,13 @@ export async function sendPushToSubscriptions(
 ) {
   configureWebPush()
 
+  const body = normalizePayload(payload)
+
   const results = await Promise.allSettled(
     subs.map(async (row) => {
       try {
-        await webpush.sendNotification(row.subscription, JSON.stringify(payload))
+        const sub = toWebPushSubscription(row)
+        await webpush.sendNotification(sub, body)
         return { ok: true, id: row.id }
       } catch (err: any) {
         // web-push puts statusCode on the error object
