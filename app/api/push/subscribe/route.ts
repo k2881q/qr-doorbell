@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const unitId = normalizeText(body.unitId, 64);
-    const contactId = normalizeText(body.contactId, 80); // optional (uuid string)
+    const contactId = normalizeText(body.contactId, 80); // optional uuid string
 
     const sub = body.subscription;
 
@@ -48,8 +48,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Store both the raw subscription JSON and the extracted fields,
-    // because your DB schema has separate NOT NULL columns.
     const payload: any = {
       unit_id: unitId,
       endpoint,
@@ -59,7 +57,6 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    // Optional: store a targeted contact id if you support contact-level push later
     if (contactId) payload.contact_id = contactId;
 
     const { error } = await supabase
@@ -73,4 +70,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err: any) {
     return NextResponse.json(
-      { ok: false, error: err?.mess
+      { ok: false, error: err?.message ?? "Unknown error" },
+      { status: 500 }
+    );
+  }
+}
