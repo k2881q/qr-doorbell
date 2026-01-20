@@ -24,8 +24,8 @@ type RecentResponse = {
 }
 
 type UnitOption = {
-  id: string
-  display_name: string
+  unit_id: string
+  display_name: string | null
   active?: boolean | null
 }
 
@@ -58,9 +58,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string) {
 }
 
 export default function ReceiverInboxPage() {
-  // Unit dropdown
+  // Units + filter
   const [units, setUnits] = useState<UnitOption[]>([])
-  const [unitFilter, setUnitFilter] = useState<string>('') // '' = all units
+  const [unitFilter, setUnitFilter] = useState<string>('') // '' = all units (for inbox filtering)
   const [showHistory, setShowHistory] = useState<boolean>(false)
 
   // Inbox
@@ -85,13 +85,13 @@ export default function ReceiverInboxPage() {
 
   const selectedUnitLabel = useMemo(() => {
     if (!unitFilter) return 'All units'
-    const u = units.find(x => x.id === unitFilter)
-    return u?.display_name || unitFilter
+    const u = units.find(x => x.unit_id === unitFilter)
+    return u?.display_name || `Unit ${unitFilter}`
   }, [unitFilter, units])
 
   const qs = useMemo(() => {
     const sp = new URLSearchParams()
-    if (unitFilter.trim()) sp.set('unitId', unitFilter.trim())
+    if (unitFilter.trim()) sp.set('unitId', unitFilter.trim()) // IMPORTANT: unit_id like "1u4"
     sp.set('limit', '25')
     sp.set('activeOnly', showHistory ? 'false' : 'true')
     return sp.toString()
@@ -146,11 +146,9 @@ export default function ReceiverInboxPage() {
       const res = await fetch('/api/units', { cache: 'no-store' })
       const json = (await res.json()) as UnitsResponse
       if (!res.ok || !json.ok) throw new Error(json.error || `Failed to load units (${res.status})`)
-      const list = (json.units || []).filter(u => u && u.id && u.display_name)
-      setUnits(list)
 
-      // If we have no selection yet, keep it as "All units"
-      // (If you'd rather default to the first unit, change this behavior.)
+      const list = (json.units ?? []).filter(u => u && typeof u.unit_id === 'string' && u.unit_id.trim())
+      setUnits(list)
     } catch (e: any) {
       // Units failing shouldn't break inbox usage; just show a helpful error.
       setErr(e?.message ?? 'Failed to load unit list')
@@ -240,9 +238,11 @@ export default function ReceiverInboxPage() {
   const enablePush = useCallback(async () => {
     setErr(null)
 
+    // IMPORTANT:
+    // This must be the actual unit_id (e.g. "1u4"), not the display label.
     const unitId = unitFilter.trim()
     if (!unitId) {
-      setErr('Select a unit from the dropdown first, then enable push.')
+      setErr('Select a specific unit from the dropdown first, then enable push.')
       return
     }
 
@@ -253,12 +253,10 @@ export default function ReceiverInboxPage() {
       if (!('Notification' in window)) throw new Error('Notifications not supported in this browser')
       if (!('serviceWorker' in navigator)) throw new Error('Service workers not supported in this browser')
 
-      // If previously denied, there will be no prompt.
       if (Notification.permission === 'denied') {
         throw new Error('Notifications are blocked for this site in browser settings (permission = denied).')
       }
 
-      // Ask permission only if needed.
       const perm =
         Notification.permission === 'granted'
           ? 'granted'
@@ -296,7 +294,7 @@ export default function ReceiverInboxPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          unitId,
+          unitId, // <-- "1u4"
           subscription: {
             endpoint: subJson.endpoint,
             keys: {
@@ -343,8 +341,8 @@ export default function ReceiverInboxPage() {
             >
               <option value="">All units</option>
               {units.map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.display_name}
+                <option key={u.unit_id} value={u.unit_id}>
+                  {u.display_name ? u.display_name : `Unit ${u.unit_id}`}
                 </option>
               ))}
             </select>
@@ -504,7 +502,10 @@ export default function ReceiverInboxPage() {
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <Link href={`/receiver/respond/${encodeURIComponent(ev.id)}`} style={{ color: '#111', fontWeight: 800 }}>
+                    <Link
+                      href={`/receiver/respond/${encodeURIComponent(ev.id)}`}
+                      style={{ color: '#111', fontWeight: 800 }}
+                    >
                       Open detail
                     </Link>
                     <div style={{ fontSize: 12, marginTop: 4, color: '#666' }}>

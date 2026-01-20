@@ -15,9 +15,12 @@ export async function GET() {
   try {
     const supabase = getSupabaseAdmin()
 
+    // IMPORTANT:
+    // We return unit_id (e.g. "1u4") because that's what ring_events & push_subscriptions use,
+    // and it's what the receiver dropdown must send back to the server.
     const { data, error } = await supabase
       .from('units')
-      .select('id, display_name, active')
+      .select('unit_id, display_name, active')
       .eq('active', true)
       .order('display_name', { ascending: true })
 
