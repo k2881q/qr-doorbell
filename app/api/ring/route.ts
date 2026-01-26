@@ -27,8 +27,6 @@ type RingRequestBody = {
   visitReason?: string | null
 }
 
-// You can tune this without touching code by setting env:
-// RING_EXPIRE_SECONDS=120 (or whatever you prefer)
 function getRingExpireSeconds() {
   const raw = process.env.RING_EXPIRE_SECONDS
   const n = raw ? Number(raw) : 120
@@ -61,9 +59,7 @@ export async function POST(req: Request) {
     .eq('unit_id', unitId)
     .maybeSingle()
 
-  if (unitErr) {
-    return json({ ok: false, error: unitErr.message }, 500)
-  }
+  if (unitErr) return json({ ok: false, error: unitErr.message }, 500)
   if (!unit || unit.active === false) {
     return json({ ok: false, error: 'Unit not found or inactive' }, 404)
   }
@@ -83,10 +79,12 @@ export async function POST(req: Request) {
     // ignore
   }
 
-  // 3) Enforce one active ring per unit
+  // 3) Enforce one active ring per unit (within the expiry window)
   const { data: existingActive, error: existingErr } = await supabase
     .from('ring_events')
-    .select('id, unit_id, status, created_at, responded_at, response_type, visitor_name, visit_reason')
+    .select(
+      'id, unit_id, status, created_at, responded_at, response_type, visitor_name, visit_reason'
+    )
     .eq('unit_id', unitId)
     .eq('status', 'pending')
     .gte('created_at', expireBeforeIso)
@@ -94,12 +92,9 @@ export async function POST(req: Request) {
     .limit(1)
     .maybeSingle()
 
-  if (existingErr) {
-    return json({ ok: false, error: existingErr.message }, 500)
-  }
+  if (existingErr) return json({ ok: false, error: existingErr.message }, 500)
 
   if (existingActive) {
-    // Ring already active; do not spam. Return the existing event.
     return json({ ok: true, ringEvent: existingActive, alreadyActive: true }, 200)
   }
 
@@ -111,8 +106,7 @@ export async function POST(req: Request) {
     visit_reason: visitReason,
   }
 
-  // If your ring_events table has contact_id, store it.
-  // If it doesn't, Supabase will error — so we retry without contact_id.
+  // If ring_events has contact_id, store it; if not, retry insert without it.
   const tryInsert = async (withContactId: boolean) => {
     const payload = { ...insertPayload }
     if (withContactId && contactId) payload.contact_id = contactId
@@ -132,21 +126,18 @@ export async function POST(req: Request) {
       ringEvent = first.data
     } else {
       const second = await tryInsert(false)
-      if (second.error) {
-        return json({ ok: false, error: second.error.message }, 500)
-      }
+      if (second.error) return json({ ok: false, error: second.error.message }, 500)
       ringEvent = second.data
     }
   }
 
   // 5) Send push (best effort; NEVER break ring creation)
   try {
-    // IMPORTANT: We explicitly type these as any[] / any so TS doesn't lock in a shape
-    // from the first select (which includes contact_id).
+    // Keep types loose so TS doesn't lock-in "contact_id is required" across retries
     let subRows: any[] = []
     let subErr: any = null
 
-    // Attempt 1: try with contact_id (if the column exists and contactId is provided)
+    // Attempt 1: select contact_id and optionally filter by it (if the column exists)
     try {
       let subQuery = supabase
         .from('push_subscriptions')
@@ -165,7 +156,7 @@ export async function POST(req: Request) {
       subErr = e
     }
 
-    // If attempt 1 failed (often because contact_id doesn't exist), retry without it.
+    // Attempt 2: fallback if contact_id doesn't exist / query fails
     if (subErr) {
       const retry = await supabase
         .from('push_subscriptions')
@@ -192,11 +183,13 @@ export async function POST(req: Request) {
         .filter((s: any) => !!s.subscription)
 
       if (subs.length > 0) {
+        // ✅ IMPORTANT: buildDoorbellPayload only accepts certain fields.
+        // We can pass ringEventId via url query param (still within allowed fields).
         const payload = buildDoorbellPayload({
-          unitId,
           unitDisplayName: unit.display_name ?? unitId,
-          ringEventId: ringEvent.id,
-          url: '/receiver',
+          visitorName,
+          visitReason,
+          url: `/receiver?ring=${encodeURIComponent(ringEvent.id)}`,
         })
 
         await sendPushToSubscriptions(subs, payload, async (deadId: string) => {
