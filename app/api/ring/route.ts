@@ -72,7 +72,6 @@ export async function POST(req: Request) {
   const expireBeforeIso = new Date(Date.now() - expireSeconds * 1000).toISOString()
 
   // 2) Expire stale pending rings (best effort)
-  // (This is intentionally "best effort"—we don't want expiry errors to break ringing.)
   try {
     await supabase
       .from('ring_events')
@@ -85,7 +84,6 @@ export async function POST(req: Request) {
   }
 
   // 3) Enforce one active ring per unit
-  // If there's already a pending ring newer than expiry window, return it and do not create another.
   const { data: existingActive, error: existingErr } = await supabase
     .from('ring_events')
     .select('id, unit_id, status, created_at, responded_at, response_type, visitor_name, visit_reason')
@@ -113,8 +111,8 @@ export async function POST(req: Request) {
     visit_reason: visitReason,
   }
 
-  // If your ring_events table has contact_id, store it (best effort).
-  // If it doesn't, Supabase will error—so we only add it if provided AND insert fails we retry.
+  // If your ring_events table has contact_id, store it.
+  // If it doesn't, Supabase will error — so we retry without contact_id.
   const tryInsert = async (withContactId: boolean) => {
     const payload = { ...insertPayload }
     if (withContactId && contactId) payload.contact_id = contactId
@@ -133,7 +131,6 @@ export async function POST(req: Request) {
     if (!first.error) {
       ringEvent = first.data
     } else {
-      // Retry without contact_id in case the column doesn't exist
       const second = await tryInsert(false)
       if (second.error) {
         return json({ ok: false, error: second.error.message }, 500)
@@ -143,45 +140,56 @@ export async function POST(req: Request) {
   }
 
   // 5) Send push (best effort; NEVER break ring creation)
-  // Fetch subscriptions for the unit. If contactId is provided, we *try* to filter by contact_id,
-  // but fall back gracefully if that column doesn't exist.
   try {
-    // Attempt 1: query includes contact_id
-    let subQuery = supabase
-      .from('push_subscriptions')
-      .select('id, subscription, endpoint, p256dh, auth, contact_id')
-      .eq('unit_id', unitId)
+    // IMPORTANT: We explicitly type these as any[] / any so TS doesn't lock in a shape
+    // from the first select (which includes contact_id).
+    let subRows: any[] = []
+    let subErr: any = null
 
-    if (contactId) {
-      subQuery = subQuery.eq('contact_id', contactId)
+    // Attempt 1: try with contact_id (if the column exists and contactId is provided)
+    try {
+      let subQuery = supabase
+        .from('push_subscriptions')
+        .select('id, subscription, endpoint, p256dh, auth, contact_id')
+        .eq('unit_id', unitId)
+
+      if (contactId) {
+        subQuery = subQuery.eq('contact_id', contactId)
+      }
+
+      const res = await subQuery
+      subRows = (res.data as any[]) || []
+      subErr = res.error || null
+    } catch (e) {
+      subRows = []
+      subErr = e
     }
 
-    let { data: subRows, error: subErr } = await subQuery
-
-    // If that failed (often because contact_id doesn't exist), retry without contact_id usage.
+    // If attempt 1 failed (often because contact_id doesn't exist), retry without it.
     if (subErr) {
       const retry = await supabase
         .from('push_subscriptions')
         .select('id, subscription, endpoint, p256dh, auth')
         .eq('unit_id', unitId)
 
-      subRows = retry.data || []
+      subRows = (retry.data as any[]) || []
       subErr = retry.error || null
     }
 
     if (subErr) {
-      // Don't break ringing if subscription lookup fails
-      console.warn('[ring] push subscription lookup failed:', subErr.message)
-    } else if (subRows && subRows.length > 0) {
-      const subs = subRows.map((r: any) => {
-        const subscription =
-          r.subscription ??
-          (r.endpoint && r.p256dh && r.auth
-            ? { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
-            : null)
+      console.warn('[ring] push subscription lookup failed:', subErr?.message || subErr)
+    } else if (subRows.length > 0) {
+      const subs = subRows
+        .map((r: any) => {
+          const subscription =
+            r.subscription ??
+            (r.endpoint && r.p256dh && r.auth
+              ? { endpoint: r.endpoint, keys: { p256dh: r.p256dh, auth: r.auth } }
+              : null)
 
-        return { id: r.id, subscription }
-      }).filter((s: any) => !!s.subscription)
+          return { id: r.id, subscription }
+        })
+        .filter((s: any) => !!s.subscription)
 
       if (subs.length > 0) {
         const payload = buildDoorbellPayload({
@@ -192,7 +200,6 @@ export async function POST(req: Request) {
         })
 
         await sendPushToSubscriptions(subs, payload, async (deadId: string) => {
-          // Dead subscription cleanup
           await supabase.from('push_subscriptions').delete().eq('id', deadId)
         })
       }
